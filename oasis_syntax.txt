@@ -1,0 +1,85 @@
+?() = optional
+ {} = zero or more
+!{} = one or more
+|   = or
+
+NUMBER = a floating point number (all integers are interpreted as floating-point)
+STRING = any '"' enclosed sequence of characters with escapes.
+IDENT = any string of alpha-numeric or '$' / '_' characters that begins with a letter.
+
+PRIMITIVE_TYPE =
+    bool
+    | num
+    | string
+    | list '[' TYPE ']'
+    | dict '[' TYPE ':' TYPE ']'
+    | fn ?('[' ?(TYPE {',' TYPE})) ?(':' TYPE)
+    | tuple ?('[' ?(TYPE {',' TYPE}))
+
+TYPE = (PRIMITIVE_TYPE | IDENT) { ('|' | '&') TYPE }
+
+BODY = '{' { STMT } '}'
+
+VARSPEC = IDENT ?(':' TYPE)
+
+VARSPECS = ?(VARSPEC {',' VARSPEC} ?(','))
+
+STMT =
+    (if | unless) EXPR STMT ?( else STMT ) // else is left-associative -> if EXPR if(1) EXPR else(1) STMT
+    | (while | until) EXPR STMT
+    | match '{'
+        { EXPR '=>' STMT } // can be computed ; cases are evaluated in sequential order
+        ?( else '=>' STMT )
+    '}'
+    | for (item IDENT in EXPR | STMT '|' EXPR '|' STMT) BODY
+    | BODY
+    | type IDENT ('{' { VARSPEC } '}' | '=' PRIMITIVE_TYPE)
+    | import STRING
+    | export '{' { IDENT } '}'
+    | fn IDENT ?( '(' VARSPECS ')' ) ?( ':' TYPE ) ('=>' EXPR | STMT)
+    | let VARSPEC '=' EXPR
+    | IDENT ':=' EXPR
+    | send EXPR '=>' EXPR
+    | spawn EXPR // EXPR must be a function call
+    | EXPR
+    | return EXPR
+
+FUNC =  fn ?( '(' VARSPECS ')' ) ?( ':' TYPE ) ('=>' EXPR | STMT) // literally a function definition without an identifier
+
+OBJECT = object ?( ':' EXPR ) '{' { VARSPEC '=' EXPR } '}'
+
+LIST = '[' EXPRS ']'
+
+DICT = dict '{' { (STRING | '[' EXPR ']') ':' EXPR } '}'
+
+ATOM =
+    NUMBER | STRING | LIST | DICT | IDENT | '(' EXPR ')' | FUNC | OBJECT | NIL | TRUE | FALSE | import STRING
+
+TERM_SUFFIXES = ':' IDENT | '[' EXPR ']' | '(' EXPRS ')' ?( '=>' BODY ) | '=>' BODY
+
+TERM_PREFIXES = not | '!' | new | recv
+
+TERM = { TERM_PREFIXES } ATOM { TERM_SUFFIXES }
+
+EXPRS = ?( EXPR {',' EXPR} ?(','))
+
+BINOP = // all are left-associative
+    '+'
+    | '-'
+    | '*'
+    | '/'
+    | '%'
+    | '='
+    | '=='
+    | '!='
+    | '<'
+    | '>'
+    | '<='
+    | '>='
+    | '||'
+    | or
+    | '&&'
+    | and
+    | '?'
+
+EXPR = TERM ?( BINOP EXPR )

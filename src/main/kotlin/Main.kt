@@ -20,6 +20,10 @@ fun run(line: String) {
     for (token in tokens) {
         println(token)
     }
+
+    val parser = Parser(tokens)
+    val expr = parser.expression()
+    println(expr)
 }
 
 fun runPrompt() {

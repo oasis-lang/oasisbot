@@ -39,7 +39,8 @@ class Scanner(private val source: String) {
         "string" to TokenType.StringType,
         "bool" to TokenType.BoolType,
         "list" to TokenType.ListType,
-        "object" to TokenType.ObjectType
+        "object" to TokenType.ObjectType,
+        "tuple" to TokenType.TupleType
     )
 
     fun scanTokens(): List<Token> {
