@@ -424,26 +424,22 @@ class Parser(private val tokens: List<Token>) {
         val mutableItems = items.toMutableList()
 
         // parse items into an AST with precedence
-        for (level in precedence) {
-            var i = 1
-            while (i < mutableItems.count()) {
-                // step to the right to find the highest priority operator
-                while (i < mutableItems.count() - 2 && priorityOfOption(mutableItems[i]) < priorityOfOption(mutableItems[i + 2])) {
-                    i += 2
-                }
+        var i = 1
+        while (i < mutableItems.count()) {
+            // step to the right to find the highest priority operator
+            while (i < mutableItems.count() - 2 && priorityOfOption(mutableItems[i]) < priorityOfOption(mutableItems[i + 2])) {
+                i += 2
+            }
 
-                // parse the operator and its operands
-                val op  = (mutableItems[i]     as L).value
-                val lhs = (mutableItems[i - 1] as R).value
-                val rhs = (mutableItems[i + 1] as R).value
-                mutableItems[i] = R(BinOp(lhs, op, rhs))
-                mutableItems.removeAt(i + 1)
-                mutableItems.removeAt(i - 1)
+            // parse the operator and its operands
+            val rhs = (mutableItems.removeAt(i + 1) as R).value
+            val op  = (mutableItems.removeAt(i) as L).value
+            val lhs = (mutableItems[i - 1] as R).value
+            mutableItems[i - 1] = R(BinOp(lhs, op, rhs))
 
-                // step down the slope
-                if (i > 1) {
-                    i -= 2
-                }
+            // step down the slope
+            if (i > 1) {
+                i -= 2
             }
         }
 
