@@ -1,11 +1,12 @@
 import TokenType.*
+import TokenType.Number
 
 sealed class Either<out A, out B>
 class L<A>(val value: A) : Either<A, Nothing>()
 class R<B>(val value: B) : Either<Nothing, B>()
 
-class Parser(private val tokens: List<Token>) {
-    private var current = 0
+class Parser(val tokens: List<Token>) {
+    var current = 0
 
     private fun isAtEnd(): Boolean {
         return tokens[current].tokenType == Eof
@@ -23,6 +24,14 @@ class Parser(private val tokens: List<Token>) {
         return peek() == type
     }
 
+    private fun peekNext(): TokenType {
+        return if (current + 1 >= tokens.size) Eof else tokens[current + 1].tokenType
+    }
+
+    private fun peekNext(type: TokenType): Boolean {
+        return peekNext() == type
+    }
+
     private fun eat(type: TokenType): Token {
         if (peek(type)) {
             return tokens[current++]
@@ -38,21 +47,186 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun body(): Statement {
-        eat(LeftBrace)
+        val line = eat(LeftBrace).line
         val stmts = mutableListOf<Statement>()
         while (!peek(RightBrace)) {
             stmts.add(statement())
         }
         eat(RightBrace)
-        return StatementList(stmts)
+        return StatementList(line, stmts)
     }
 
-    private fun statement(): Statement {
-        return ExpressionStatement(NilLiteral())
+    private fun whileStatement(): Statement {
+        val token = eat()
+        val type = token.tokenType
+        val line = token.line
+        val condition = expression()
+        val body = statement()
+        return WhileStatement(
+            line,
+            when (type) {
+                While -> condition
+                Until -> UnaryOp(Token(Not, "not", null, line), condition)
+                else -> NilLiteral(0)
+            },
+            body
+        )
+    }
+
+    private fun ifStatement(): Statement {
+        val token = eat()
+        val type = token.tokenType
+        val line = token.line
+        val condition = expression()
+        val thenBranch = statement()
+        val elseBranch = if (peek(Else)) {
+            eat(Else)
+            statement()
+        } else {
+            null
+        }
+        return IfStatement(
+            line,
+            when (type) {
+                If -> condition
+                Unless -> UnaryOp(Token(Not, "not", null, line), condition)
+                else -> NilLiteral(0)
+            }, thenBranch, elseBranch
+        )
+    }
+
+    private fun forStatement(): Statement {
+        val line = eat(For).line
+        if (peek(Item)) {
+            eat(Item)
+            val name = eat(Identifier).literal as String
+            eat(In)
+            val iterable = expression()
+            val body = statement()
+            return IteratorStatement(line, name, iterable, body)
+        } else {
+            val initializer = statement()
+            eat(Pipe)
+            val condition = expression()
+            eat(Pipe)
+            val increment = statement()
+            val body = statement()
+            return ForStatement(line, initializer, condition, increment, body)
+        }
+    }
+
+    private fun matchStatement(): Statement {
+        val line = eat(Match).line
+        val expr = expression()
+        eat(LeftBrace)
+        val cases = mutableListOf<Pair<Expression, Statement>>()
+        while (!peek(RightBrace) && !peek(Else)) {
+            val pattern = expression()
+            eat(ColonEqual)
+            val body = statement()
+            cases.add(Pair(pattern, body))
+        }
+        val elseBranch = if (peek(Else)) {
+            eat(Else)
+            eat(ColonEqual)
+            statement()
+        } else {
+            null
+        }
+        eat(RightBrace)
+        return MatchStatement(line, expr, cases, elseBranch)
+    }
+
+    fun statement(): Statement {
+        when (peek()) {
+            If, Unless -> return ifStatement()
+            While, Until -> return whileStatement()
+            For -> return forStatement()
+            Match -> return matchStatement()
+            Send -> {
+                val line = eat(Send).line
+                val value = expression()
+                eat(Arrow)
+                val channel = expression()
+                return SendStatement(line, value, channel)
+            }
+            Export -> {
+                val line = eat(Export).line
+                if (peek(LeftBrace)) {
+                    eat(LeftBrace)
+                    val names = mutableListOf<String>()
+                    names.add(eat(Identifier).lexeme)
+                    while (peek(Comma)) {
+                        eat(Comma)
+                        names.add(eat(Identifier).lexeme)
+                    }
+                    eat(RightBrace)
+                    return ExportStatement(line, names)
+                } else {
+                    return ExportStatement(line, listOf(eat(Identifier).lexeme))
+                }
+            }
+            Fn -> {
+                val line = eat(Fn).line
+                val const = peek(Const)
+                if (const) {
+                    eat(Const)
+                }
+                val name = eat(Identifier).lexeme
+                val func = fn() as FunctionLiteral
+                func.name = name
+                return DeclarationStatement(line, name, func, const)
+            }
+            Let -> {
+                val line = eat(Let).line
+                val const = peek(Const)
+                if (const) {
+                    eat(Const)
+                }
+                val name = eat(Identifier).lexeme
+                eat(Equal)
+                val value = expression()
+                return DeclarationStatement(line, name, value, const)
+            }
+            Identifier -> {
+                if (peekNext(ColonEqual)) {
+                    val token = eat(Identifier)
+                    val name = token.lexeme
+                    val line = token.line
+                    eat(ColonEqual)
+                    val value = expression()
+                    return DeclarationStatement(line, name, value, false)
+                } else
+                    return ExpressionStatement(tokens[current].line, expression())
+            }
+            Spawn -> {
+                val line = eat(Spawn).line
+                val value = expression()
+                return SpawnStatement(line, value)
+            }
+            Return -> {
+                val line = eat(Return).line
+                val value = expression()
+                return ReturnStatement(line, value)
+            }
+            Break -> {
+                return BreakStatement(eat(Break).line)
+            }
+            Continue -> {
+                return ContinueStatement(eat(Continue).line)
+            }
+            Import -> {
+                val line = eat(Import).line
+                val path = eat(TokenType.String).literal as String
+                return ImportStatement(line, path)
+            }
+            LeftBrace -> return body()
+            else -> return ExpressionStatement(tokens[current].line, expression())
+        }
     }
 
     private fun constraint(): Constraint {
-        var constraint = when(peek()) {
+        var constraint = when (peek()) {
             NumType -> {
                 eat(NumType)
                 NumericConstraint
@@ -120,14 +294,18 @@ class Parser(private val tokens: List<Token>) {
                 eat(Object)
                 ObjectConstraint
             }
+            Nil -> {
+                eat(Nil)
+                NilConstraint
+            }
             else -> {
-               if (peek(Identifier)) {
-                   val name = eat(Identifier).lexeme
-                   NamedConstraint(name)
-               } else {
-                   raise("Unexpected token ${peek().name} - expected constraint")
-                   NilConstraint
-               }
+                if (peek(Identifier)) {
+                    val name = eat(Identifier).lexeme
+                    NamedConstraint(name)
+                } else {
+                    raise("Unexpected token ${peek().name} - expected constraint")
+                    NilConstraint
+                }
             }
         }
 
@@ -145,18 +323,20 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun fn(): Expression {
-        val args = mutableMapOf<String, Constraint>()
+        val args = mutableListOf<Pair<String, Constraint>>()
 
-        if(peek(LeftParen)) {
+        val line = tokens[current].line
+
+        if (peek(LeftParen)) {
             eat(LeftParen)
-            if (!peek(RightParen)){
+            if (!peek(RightParen)) {
                 fun parseArgument() {
                     val name = eat(Identifier).lexeme
                     if (peek(Colon)) {
                         eat(Colon)
-                        args[name] = constraint()
+                        args.add(Pair(name, constraint()))
                     } else {
-                        args[name] = AnyConstraint
+                        args.add(Pair(name, AnyConstraint))
                     }
                 }
 
@@ -176,20 +356,26 @@ class Parser(private val tokens: List<Token>) {
             AnyConstraint
         }
 
-        when(peek()) {
-            LeftBrace -> return FunctionLiteral(args, returnType, body(), "<anonymous>")
+        when (peek()) {
+            LeftBrace -> return FunctionLiteral(tokens[current].line, args, returnType, body(), "<anonymous>")
             Arrow -> {
-                eat(Arrow)
-                return FunctionLiteral(args, returnType, ReturnStatement(expression()), "<anonymous>")
+                return FunctionLiteral(
+                    line,
+                    args,
+                    returnType,
+                    ReturnStatement(eat(Arrow).line, expression()),
+                    "<anonymous>"
+                )
             }
             else -> raise("Unexpected token ${peek().name} - expected { or =>")
         }
 
         // never reached
-        return NilLiteral()
+        return NilLiteral(0)
     }
 
     private fun objectExpr(): Expression {
+        val line = tokens[current].line
         val parent = if (peek(Colon)) {
             eat(Colon)
             expression()
@@ -201,7 +387,7 @@ class Parser(private val tokens: List<Token>) {
         if (!peek(RightBrace)) {
             fun parseField() {
                 val name = eat(Identifier).lexeme
-                eat(Colon)
+                eat(Equal)
                 fields[name] = expression()
             }
 
@@ -212,12 +398,12 @@ class Parser(private val tokens: List<Token>) {
             }
         }
         eat(RightBrace)
-        return ObjectLiteral(fields, parent)
+        return ObjectLiteral(line, fields, parent)
     }
 
     private fun list(): Expression {
         val elements = mutableListOf<Expression>()
-        eat(LeftBracket)
+        val line = eat(LeftBracket).line
         if (!peek(RightBracket)) {
             elements.add(expression())
             while (peek(Comma)) {
@@ -226,22 +412,23 @@ class Parser(private val tokens: List<Token>) {
             }
         }
         eat(RightBracket)
-        return ListLiteral(elements)
+        return ListLiteral(line, elements)
     }
 
     private fun dict(): Expression {
-        eat(Dict)
+        val line = eat(Dict).line
         val elements = mutableMapOf<Expression, Expression>()
         eat(LeftBrace)
         if (!peek(RightBrace)) {
             fun parseElement() {
-                val key = if(peek(LeftParen)) {
+                val key = if (peek(LeftParen)) {
                     eat(LeftParen)
                     val key = expression()
                     eat(RightParen)
                     key
                 } else {
-                    StringLiteral(eat(TokenType.String).literal as String)
+                    val token = eat(TokenType.String)
+                    StringLiteral(token.line, token.literal as String)
                 }
                 eat(Colon)
                 val value = expression()
@@ -255,47 +442,51 @@ class Parser(private val tokens: List<Token>) {
             }
         }
         eat(RightBrace)
-        return DictLiteral(elements)
+        return DictLiteral(line, elements)
     }
 
     private fun atom(): Expression {
-        return when(peek()) {
-            Number -> NumberLiteral(eat().literal as Double)
-            TokenType.String -> StringLiteral(eat().literal as String)
+        return when (peek()) {
+            Number -> NumberLiteral(tokens[current].line, eat().literal as Double)
+            TokenType.String -> StringLiteral(tokens[current].line, eat().literal as String)
             LeftBracket -> list()
             Dict -> dict()
-            Identifier -> VariableReference(eat().lexeme)
+            Identifier -> VariableReference(tokens[current].line, eat().lexeme)
             LeftParen -> {
-                eat(LeftParen)
+                val line = eat(LeftParen).line
                 val item = expression()
-                if(peek(Comma)) {
+                if (peek(Comma)) {
                     val items = mutableListOf(item)
-                    while(!peek(RightParen)) {
+                    while (!peek(RightParen)) {
                         eat(Comma)
                         items.add(expression())
                     }
-                    return TupleExpression(items)
+                    eat(RightParen)
+                    return TupleExpression(line, items)
                 }
+                eat(RightParen)
                 item
             }
-            Fn -> { eat(Fn); fn() }
-            Object -> { eat(Object); objectExpr() }
-            Nil -> { eat(Nil); NilLiteral() }
-            True -> BoolLiteral(true)
-            False -> BoolLiteral(false)
+            Fn -> {
+                eat(Fn); fn()
+            }
+            Object -> {
+                eat(Object); objectExpr()
+            }
+            Nil -> NilLiteral(tokens[current].line)
+            True -> BoolLiteral(eat(True).line, true)
+            False -> BoolLiteral(eat(False).line, false)
             Import -> {
-                eat(Import)
-                //val file = eat(TokenType.String).literal as String
+                val line = eat(Import).line
+                val file = eat(TokenType.String).literal as String
 
-                // TODO - Imports
-
-                NilLiteral()
+                return ImportExpression(line, file)
             }
             else -> {
-                raise("Invalid expression")
+                raise("Unexpected token ${peek().name} - Invalid expression")
 
                 // never going to reach
-                NilLiteral()
+                NilLiteral(0)
             }
         }
     }
@@ -310,19 +501,19 @@ class Parser(private val tokens: List<Token>) {
     }
 
     private fun termSuffix(lhs: Expression): Expression {
-        when(peek()) {
+        when (peek()) {
             Colon -> {
-                eat(Colon)
-                return PropertyAccess(lhs, eat(TokenType.String).literal as String)
+                val line = eat(Colon).line
+                return PropertyAccess(line, lhs, eat(Identifier).lexeme)
             }
             LeftBracket -> {
-                eat(LeftBracket)
+                val line = eat(LeftBracket).line
                 val index = expression()
                 eat(RightBracket)
-                return IndexOperator(lhs, index)
+                return IndexOperator(line, lhs, index)
             }
             LeftParen -> {
-                eat(LeftParen)
+                val line = eat(LeftParen).line
                 val parameters = mutableListOf<Expression>()
                 if (!peek(RightParen)) {
                     parameters.add(expression())
@@ -331,38 +522,48 @@ class Parser(private val tokens: List<Token>) {
                         parameters.add(expression())
                     }
                 }
-                val fcall = FunctionCall(lhs, parameters)
+                eat(RightParen)
+                val fcall = FunctionCall(line, lhs, parameters)
                 if (peek(Arrow)) {
+                    val line = eat(Arrow).line
                     // Syntactic sugar for f(..., fn { })
-                    fcall.arguments.add(FunctionLiteral(
-                        mapOf(),
-                        NilConstraint,
-                        body(),
-                        "<anonymous>"
-                    ))
+                    fcall.arguments.add(
+                        FunctionLiteral(
+                            line,
+                            listOf(),
+                            NilConstraint,
+                            body(),
+                            "<anonymous>"
+                        )
+                    )
                 }
                 return fcall
             }
             Arrow -> {
-                eat(Arrow)
+                val line = eat(Arrow).line
                 // Syntactic sugar for f(fn { })
-                return FunctionCall(lhs, mutableListOf(FunctionLiteral(
-                    mapOf(),
-                    NilConstraint,
-                    body(),
-                    "<anonymous>"
-                )))
+                return FunctionCall(
+                    line, lhs, mutableListOf(
+                        FunctionLiteral(
+                            line,
+                            listOf(),
+                            NilConstraint,
+                            body(),
+                            "<anonymous>"
+                        )
+                    )
+                )
             }
             else -> return lhs
         }
     }
 
     private fun termPrefix(): Expression {
-        return when(peek()) {
-            Minus -> { eat(); UnaryOp(Minus, termPrefix()) }
-            Not, Bang -> { eat(); UnaryOp(Not, termPrefix()) }
-            New -> { eat(); UnaryOp(New, termPrefix()) }
-            Recv -> { eat(); UnaryOp(Recv, termPrefix()) }
+        return when (peek()) {
+            Minus -> UnaryOp(eat(), termPrefix())
+            Not, Bang -> UnaryOp(eat(), termPrefix())
+            New -> UnaryOp(eat(), termPrefix())
+            Recv -> UnaryOp(eat(), termPrefix())
             else -> atom()
         }
     }
@@ -385,12 +586,12 @@ class Parser(private val tokens: List<Token>) {
     }
 
     fun expression(): Expression {
-        val items = mutableListOf<Either<TokenType, Expression>>(R(term()))
-        while(seeBinop()) {
-            items.add(L(eat().tokenType))
+        val items = mutableListOf<Either<Token, Expression>>(R(term()))
+        while (seeBinop()) {
+            items.add(L(eat()))
             items.add(R(term()))
         }
-        return if(items.count() == 1)
+        return if (items.count() == 1)
             (items[0] as R).value
         else
             parsePrecedence(items)
@@ -406,21 +607,21 @@ class Parser(private val tokens: List<Token>) {
         listOf(Question)
     )
 
-    private fun priorityOf(type: TokenType): Int {
-        for((i, p) in precedence.withIndex()) {
-            if(type in p) return i
+    private fun priorityOf(type: Token): Int {
+        for ((i, p) in precedence.withIndex()) {
+            if (type.tokenType in p) return i
         }
         return -1
     }
 
-    private fun priorityOfOption(type: Either<TokenType, Expression>): Int {
-        return when(type) {
+    private fun priorityOfOption(type: Either<Token, Expression>): Int {
+        return when (type) {
             is L -> priorityOf(type.value)
             is R -> -1
         }
     }
 
-    private fun parsePrecedence(items: List<Either<TokenType, Expression>>): Expression {
+    private fun parsePrecedence(items: List<Either<Token, Expression>>): Expression {
         val mutableItems = items.toMutableList()
 
         // parse items into an AST with precedence
@@ -433,7 +634,7 @@ class Parser(private val tokens: List<Token>) {
 
             // parse the operator and its operands
             val rhs = (mutableItems.removeAt(i + 1) as R).value
-            val op  = (mutableItems.removeAt(i) as L).value
+            val op = (mutableItems.removeAt(i) as L).value
             val lhs = (mutableItems[i - 1] as R).value
             mutableItems[i - 1] = R(BinOp(lhs, op, rhs))
 

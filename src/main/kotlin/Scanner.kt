@@ -1,9 +1,9 @@
 class Scanner(private val source: String) {
     private var start = 0
-    private var current = 0
+    var current = 0
     private var line = 1
 
-    private var tokens = mutableListOf<Token>()
+    var tokens = mutableListOf<Token>()
 
     private var keywords = mapOf(
         "and" to TokenType.And,
@@ -40,7 +40,8 @@ class Scanner(private val source: String) {
         "bool" to TokenType.BoolType,
         "list" to TokenType.ListType,
         "object" to TokenType.ObjectType,
-        "tuple" to TokenType.TupleType
+        "tuple" to TokenType.TupleType,
+        "spawn" to TokenType.Spawn
     )
 
     fun scanTokens(): List<Token> {
@@ -91,7 +92,7 @@ class Scanner(private val source: String) {
             ']' -> addToken(TokenType.RightBracket)
             '{' -> addToken(TokenType.LeftBrace)
             '}' -> addToken(TokenType.RightBrace)
-            ':' -> addToken(TokenType.Colon)
+            ':' -> if (match('=')) addToken(TokenType.ColonEqual) else addToken(TokenType.Colon)
             '&' -> if (match('&')) addToken(TokenType.AmpersandAmpersand) else addToken(TokenType.Ampersand)
             '|' -> if (match('|')) addToken(TokenType.PipePipe) else addToken(TokenType.Pipe)
             ',' -> addToken(TokenType.Comma)

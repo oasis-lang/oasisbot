@@ -28,8 +28,8 @@ STMT =
     (if | unless) EXPR STMT ?( else STMT ) // else is left-associative -> if EXPR if(1) EXPR else(1) STMT
     | (while | until) EXPR STMT
     | match '{'
-        { EXPR '=>' STMT } // can be computed ; cases are evaluated in sequential order
-        ?( else '=>' STMT )
+        { EXPR ':=' STMT } // can be computed ; cases are evaluated in sequential order
+        ?( else ':=' STMT )
     '}'
     | for (item IDENT in EXPR | STMT '|' EXPR '|' STMT) BODY
     | BODY
