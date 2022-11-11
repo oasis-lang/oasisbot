@@ -12,9 +12,19 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
     var environment = Environment()
     val callStack = Stack<CallFrame>()
 
+    var handlingScope = false
+
+    fun loadModule(module: Module) {
+        environment.define(module.name, module)
+    }
+
     init {
         // Push a dummy frame to the call stack so that we can always peek at the top frame.
         resetCallStack()
+
+        // Load the standard library.
+        loadModule(StandardLibrary.Io.toModule())
+        loadModule(StandardLibrary.Math.toModule())
     }
 
     fun resetState() {
@@ -24,11 +34,11 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
         resetCallStack()
     }
 
-    fun resetCallStack() {
+    private fun resetCallStack() {
         callStack.clear()
         callStack.push(
             CallFrame(
-                object : OasisCallable {
+                object : OasisCallable() {
                     override fun arity(): Int {
                         return 0
                     }
@@ -47,32 +57,42 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
     }
 
     fun eval(expression: Expression): Any? {
-        return expression.accept(this)
+        try {
+            return expression.accept(this)
+        } catch (e: RuntimeError) {
+            throw OasisError(expression.line, e.message!!)
+        }
     }
 
     fun execute(statement: Statement): Boolean {
-        return statement.accept(this)
+        try {
+            return statement.accept(this)
+        } catch (e: RuntimeError) {
+            throw OasisError(statement.line, e.message!!)
+        }
     }
 
-    fun execute(statementList: StatementList): Boolean {
+    private fun beginScope() {
         environment = Environment(environment)
+    }
+
+    private fun endScope() {
+        environment = environment.enclosing!!
+    }
+
+    private fun execute(statementList: StatementList): Boolean {
         for (statement in statementList.stmts) {
             if (execute(statement)) {
                 environment = environment.enclosing!!
                 return true
             }
         }
-        environment = environment.enclosing!!
         return false
     }
 
     fun call(function: OasisCallable, line: Int, arguments: List<Any?>): Any? {
         callStack.push(CallFrame(function, line))
-        try {
-            function.call(this, arguments)
-        } catch (e: RuntimeError) {
-            throw OasisError(line, e.message!!)
-        }
+        function.call(this, arguments)
         val frame = callStack.pop()
         return frame.returnValue
     }
@@ -127,41 +147,26 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
     }
 
     override fun visitVariableReference(node: VariableReference): Any? {
-        // FOR DEBUGGING
-        if (node.name == "debug") {
-            return Stream()
-        }
-        if(node.name == "debugPrint") {
-            return object : OasisCallable {
-                override fun arity(): Int {
-                    return 1
-                }
-
-                override fun name(): String {
-                    return "debugPrint"
-                }
-
-                override fun call(interpreter: Interpreter, arguments: List<Any?>) {
-                    println(arguments[0])
-                }
-            }
-        }
-        try {
-            return environment.get(node.name)
-        } catch (e: RuntimeError) {
-            throw OasisError(node.line, e.message!!)
-        }
+        return environment.get(node.name)
     }
 
-    override fun visitTupleExpression(node: TupleExpression): Any? {
+    override fun visitTupleExpression(node: TupleExpression): Any {
         return Tuple(*node.items.map { eval(it) }.toTypedArray())
     }
 
     override fun visitPropertyAccess(node: PropertyAccess): Any? {
         return when (val obj = eval(node.obj)) {
             is Prototype -> obj.get(node.name)
-            // TODO: Add support for primitives with operations
-            else -> throw OasisError(node.line, "Cannot access property of non-object")
+            is Module -> obj.get(node.name)
+            is Double -> {
+                val fn = (environment.get("math") as Module).get(node.name)
+                if (fn !is OasisCallable) {
+                    throw RuntimeError("Only functions can be accessed through primitives.")
+                } else {
+                    PartialFunc(fn, listOf(obj), node.line)
+                }
+            }
+            else -> throw RuntimeError("Cannot access property of non-object")
         }
     }
 
@@ -172,7 +177,7 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
             is List<*> -> obj[(index as Double).toInt()]
             is Map<*, *> -> obj[index]
             is Tuple -> obj.get((index as Double).toInt())
-            else -> throw OasisError(node.line, "Cannot index non-indexable object")
+            else -> throw RuntimeError("Cannot index non-indexable object")
         }
     }
 
@@ -180,13 +185,10 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
         val callee = eval(node.fn)
         val arguments = node.arguments.map { eval(it) }
         if (callee !is OasisCallable) {
-            throw OasisError(node.line, "Cannot call non-callable object")
+            throw RuntimeError("Cannot call non-callable object ($callee)")
         }
         if (callee.arity() != arguments.size) {
-            throw OasisError(
-                node.line,
-                "Expected ${callee.arity()} arguments but got ${arguments.size} at function ${callee.name()}"
-            )
+            throw RuntimeError("Expected ${callee.arity()} arguments but got ${arguments.size} at function ${callee.name()}")
         }
         return call(callee, node.line, arguments)
     }
@@ -214,10 +216,10 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
                         "/" -> left.toDouble() / right.toDouble()
                         "%" -> left.toDouble() % right.toDouble()
                         "^" -> left.toDouble().pow(right.toDouble())
-                        else -> throw OasisError(node.line, "Invalid operator")
+                        else -> throw RuntimeError("Invalid operator")
                     }
                 } else {
-                    throw OasisError(node.line, "Invalid operands for operator")
+                    throw RuntimeError("Invalid operands for operator")
                 }
             }
             "==", "!=", "<", ">", "<=", ">=" -> {
@@ -232,10 +234,10 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
                             ">" -> left.toDouble() > right.toDouble()
                             "<=" -> left.toDouble() <= right.toDouble()
                             ">=" -> left.toDouble() >= right.toDouble()
-                            else -> throw OasisError(node.line, "Invalid operator")
+                            else -> throw RuntimeError("Invalid operator")
                         }
                     } else {
-                        throw OasisError(node.line, "Invalid operands for operator")
+                        throw RuntimeError("Invalid operands for operator")
                     }
                 }
             }
@@ -245,14 +247,19 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
                 if (node.op.lexeme in listOf("or", "||") && isTruthy(left)) return true
                 return eval(node.rhs)
             }
-            "=" -> {
+            "=", "+=", "-=", "*=", "/=", "%=", "^=" -> {
                 when (node.lhs) {
                     is VariableReference -> {
                         val value = eval(node.rhs)
-                        try {
-                            environment.assign(node.lhs.name, value)
-                        } catch (e: RuntimeError) {
-                            throw OasisError(node.line, e.message!!)
+                        when(node.op.lexeme) {
+                            "=" -> environment.assign(node.lhs.name, value)
+                            "+=" -> environment.assign(node.lhs.name, eval(node.lhs) as Double + value as Double)
+                            "-=" -> environment.assign(node.lhs.name, eval(node.lhs) as Double - value as Double)
+                            "*=" -> environment.assign(node.lhs.name, eval(node.lhs) as Double * value as Double)
+                            "/=" -> environment.assign(node.lhs.name, eval(node.lhs) as Double / value as Double)
+                            "%=" -> environment.assign(node.lhs.name, eval(node.lhs) as Double % value as Double)
+                            "^=" -> environment.assign(node.lhs.name, (eval(node.lhs) as Double).pow(value as Double))
+                            else -> throw RuntimeError("Invalid operator")
                         }
                         return value
                     }
@@ -263,40 +270,38 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
                             obj.set(node.lhs.name, value)
                             return value
                         } else {
-                            throw OasisError(node.line, "Cannot assign to non-object")
+                            throw RuntimeError("Cannot assign to non-object")
                         }
                     }
                     is IndexOperator -> {
                         val obj = eval(node.lhs.obj)
                         val index = eval(node.lhs.index)
                         if (obj is List<*>) {
-                            if (index is Int) {
-                                val objList = (obj as? List<Any?> ?: throw OasisError(
-                                    node.line,
+                            if (index is Number) {
+                                val objList = (obj as? List<Any?> ?: throw RuntimeError(
                                     "Cannot assign to non-object"
                                 )).toMutableList()
                                 val value = eval(node.rhs)
-                                objList[index] = value
+                                objList[index.toInt()] = value
                                 return value
                             } else {
-                                throw OasisError(node.line, "Index must be an integer")
+                                throw RuntimeError("Index must be an integer")
                             }
                         } else if (obj is Map<*, *>) {
-                            val objMap = (obj as? Map<Any?, Any?> ?: throw OasisError(
-                                node.line,
+                            val objMap = (obj as? Map<Any?, Any?> ?: throw RuntimeError(
                                 "Invalid map"
                             )).toMutableMap()
                             val value = eval(node.rhs)
                             objMap[index] = value
                             return value
                         } else {
-                            throw OasisError(node.line, "Cannot index non-indexable object")
+                            throw RuntimeError("Cannot index non-indexable object")
                         }
                     }
-                    else -> throw OasisError(node.line, "Invalid assignment target")
+                    else -> throw RuntimeError("Invalid assignment target")
                 }
             }
-            else -> throw OasisError(node.line, "Invalid operator")
+            else -> throw RuntimeError("Invalid operator")
         }
     }
 
@@ -307,10 +312,10 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
             "not", "!" -> !isTruthy(right)
             "recv" -> {
                 val stream = eval(node.rhs)
-                if (stream !is Stream) throw OasisError(node.line, "Cannot receive from non-stream")
+                if (stream !is Stream) throw RuntimeError("Cannot receive from non-stream")
                 return stream.receive()
             }
-            else -> throw OasisError(node.line, "Invalid operator")
+            else -> throw RuntimeError("Invalid operator")
         }
     }
 
@@ -336,48 +341,129 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
     }
 
     override fun visitIteratorStatement(node: IteratorStatement): Boolean {
-        TODO("Not yet implemented")
+        val iterable = eval(node.iterator)
+        val temp = handlingScope
+        beginScope()
+        if (iterable is Iterable<*>) {
+            for (item in iterable) {
+                environment.define(node.name, item)
+                try {
+                    if (execute(node.body)) {
+                        endScope()
+                        return true
+                    }
+                } catch (e: Special) {
+                    when(e.type) {
+                        SpecialType.BREAK -> {
+                            endScope()
+                            return false
+                        }
+                        SpecialType.CONTINUE -> {
+                            continue
+                        }
+                    }
+                }
+
+            }
+        } else {
+            throw RuntimeError("Cannot iterate over non-iterable")
+        }
+        endScope()
+        handlingScope = temp
+        return false
     }
 
     override fun visitForStatement(node: ForStatement): Boolean {
+        val temp = handlingScope
+        handlingScope = true
+        beginScope()
         if (execute(node.initializer)) return true
         while (isTruthy(eval(node.condition))) {
-            if (execute(node.body)) return true
-            if (execute(node.increment)) return true
+            try {
+                if (execute(node.body)) {
+                    endScope()
+                    return true
+                }
+                if (execute(node.increment)) {
+                    endScope()
+                    return true
+                }
+            } catch (e: Special) {
+                when(e.type) {
+                    SpecialType.BREAK -> {
+                        endScope()
+                        return false
+                    }
+                    SpecialType.CONTINUE -> {
+                        if (execute(node.increment)) {
+                            endScope()
+                            return true
+                        }
+                        continue
+                    }
+                }
+            }
         }
+        endScope()
+        handlingScope = temp
         return false
     }
 
     override fun visitWhileStatement(node: WhileStatement): Boolean {
-        TODO("Not yet implemented")
+        val temp = handlingScope
+        handlingScope = true
+        beginScope()
+        while (isTruthy(eval(node.condition))) {
+            try {
+                if (execute(node.body)) {
+                    endScope()
+                    return true
+                }
+            } catch (e: Special) {
+                when (e.type) {
+                    SpecialType.BREAK -> {
+                        endScope()
+                        return false
+                    }
+
+                    SpecialType.CONTINUE -> {
+                        continue
+                    }
+                }
+            }
+        }
+        endScope()
+        handlingScope = temp
+        return false
     }
 
     override fun visitIfStatement(node: IfStatement): Boolean {
-        TODO("Not yet implemented")
+        if (isTruthy(eval(node.condition))) {
+            return execute(node.thenBranch)
+        } else if (node.elseBranch != null) {
+            return execute(node.elseBranch)
+        }
+        return false
     }
 
     override fun visitContinueStatement(node: ContinueStatement): Boolean {
-        TODO("Not yet implemented")
+        throw Special(SpecialType.CONTINUE)
     }
 
     override fun visitBreakStatement(node: BreakStatement): Boolean {
-        TODO("Not yet implemented")
+        throw Special(SpecialType.BREAK)
     }
 
     override fun visitSpawnStatement(node: SpawnStatement): Boolean {
         if (node.expr !is FunctionCall) {
-            throw OasisError(node.line, "Spawn statement must be a function call")
+            throw RuntimeError("Spawn statement must be a function call")
         }
         thread { eval(node.expr) }
         return false
     }
 
     override fun visitDeclarationStatement(node: DeclarationStatement): Boolean {
-        try {
-            environment.define(node.name, eval(node.value))
-        } catch (e: RuntimeError) {
-            throw OasisError(node.line, e.message!!)
-        }
+        environment.define(node.name, eval(node.value))
         return false
     }
 
@@ -388,7 +474,7 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
     override fun visitSendStatement(node: SendStatement): Boolean {
         val stream = eval(node.receiver)
         if (stream !is Stream) {
-            throw OasisError(node.line, "Cannot send to non-stream")
+            throw RuntimeError("Cannot send to non-stream")
         }
         stream.send(eval(node.value))
         return false
@@ -396,7 +482,7 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
 
     override fun visitReturnStatement(node: ReturnStatement): Boolean {
         if (callStack.isEmpty()) {
-            throw OasisError(node.line, "Cannot return outside of function")
+            throw RuntimeError("Cannot return outside of function")
         }
 
         callStack.peek().returnValue = eval(node.value)
@@ -409,7 +495,16 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
     }
 
     override fun visitStatementList(node: StatementList): Boolean {
-        return execute(node)
+        if (!handlingScope)
+            beginScope()
+        return execute(node).also {
+            if (!handlingScope)
+                endScope()
+        }
+    }
+
+    override fun visitEmptyStatement(node: EmptyStatement): Boolean {
+        return false
     }
 
 }

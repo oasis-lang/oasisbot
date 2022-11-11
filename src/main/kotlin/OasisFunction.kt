@@ -4,7 +4,7 @@ class OasisFunction(
     val returnType: Constraint,
     val closure: Environment,
     val body: Statement
-) : OasisCallable {
+) : OasisCallable() {
     override fun arity(): Int {
         return parameters.size
     }
@@ -27,5 +27,19 @@ class OasisFunction(
             throw RuntimeError("Function '$name' returned ${interpreter.callStack.peek().returnValue} which does not fit the return type ${returnType}.")
         }
         interpreter.environment = previous
+    }
+}
+
+class PartialFunc(val fn: OasisCallable, val partialArgs: List<Any?>, val line: Int): OasisCallable() {
+    override fun arity(): Int {
+        return fn.arity() - partialArgs.size
+    }
+
+    override fun name(): String {
+        return "partial ${fn.name()}(${partialArgs.joinToString(", ")})"
+    }
+
+    override fun call(interpreter: Interpreter, arguments: List<Any?>) {
+        interpreter.callStack.peek().returnValue = interpreter.call(fn, line, partialArgs.plus(arguments))
     }
 }

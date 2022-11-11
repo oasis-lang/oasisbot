@@ -3,13 +3,17 @@ class HighestException(val interpreter: Interpreter, val error: OasisError) : Th
         return error.message ?: "Unknown error"
     }
 
-    override fun printStackTrace() {
+    override fun toString(): String {
         val stack = interpreter.callStack
         val sb = StringBuilder()
         sb.appendLine("  at ${stack.peek().function.name()}(called at line: ${stack.peek().callSite})")
         for (i in stack.size - 2 downTo 0) {
             sb.appendLine("  at ${stack[i].function.name()}(called at line: ${stack[i].callSite})")
         }
-        println(sb.toString())
+        return "\n" + localizedMessage + "\n" + sb.toString()
+    }
+
+    override fun fillInStackTrace(): Throwable {
+        return this
     }
 }

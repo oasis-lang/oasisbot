@@ -8,7 +8,7 @@ enum class TokenType {
     // Keywords
     And, Or, Nil, True, False, Let, Const, Type, Object, Fn, If, Unless, Else, While, Until, For,
     Match, Send, Recv, Spawn, Not, Item, In, Break, Continue, Return, Import, Export, New, Dict,
-    NumType, StringType, BoolType, ListType, ObjectType, TupleType,
+    NumType, StringType, BoolType, ListType, TupleType, To, Then,
 
     Eof
 }

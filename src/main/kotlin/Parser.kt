@@ -5,8 +5,8 @@ sealed class Either<out A, out B>
 class L<A>(val value: A) : Either<A, Nothing>()
 class R<B>(val value: B) : Either<Nothing, B>()
 
-class Parser(val tokens: List<Token>) {
-    var current = 0
+class Parser(private val tokens: List<Token>) {
+    private var current = 0
 
     private fun isAtEnd(): Boolean {
         return tokens[current].tokenType == Eof
@@ -99,7 +99,7 @@ class Parser(val tokens: List<Token>) {
         val line = eat(For).line
         if (peek(Item)) {
             eat(Item)
-            val name = eat(Identifier).literal as String
+            val name = eat(Identifier).lexeme
             eat(In)
             val iterable = expression()
             val body = statement()
@@ -122,7 +122,7 @@ class Parser(val tokens: List<Token>) {
         val cases = mutableListOf<Pair<Expression, Statement>>()
         while (!peek(RightBrace) && !peek(Else)) {
             val pattern = expression()
-            eat(ColonEqual)
+            eat(Then)
             val body = statement()
             cases.add(Pair(pattern, body))
         }
@@ -146,13 +146,13 @@ class Parser(val tokens: List<Token>) {
             Send -> {
                 val line = eat(Send).line
                 val value = expression()
-                eat(Arrow)
+                eat(To)
                 val channel = expression()
                 return SendStatement(line, value, channel)
             }
             Export -> {
                 val line = eat(Export).line
-                if (peek(LeftBrace)) {
+                return if (peek(LeftBrace)) {
                     eat(LeftBrace)
                     val names = mutableListOf<String>()
                     names.add(eat(Identifier).lexeme)
@@ -161,9 +161,9 @@ class Parser(val tokens: List<Token>) {
                         names.add(eat(Identifier).lexeme)
                     }
                     eat(RightBrace)
-                    return ExportStatement(line, names)
+                    ExportStatement(line, names)
                 } else {
-                    return ExportStatement(line, listOf(eat(Identifier).lexeme))
+                    ExportStatement(line, listOf(eat(Identifier).lexeme))
                 }
             }
             Fn -> {
@@ -189,15 +189,15 @@ class Parser(val tokens: List<Token>) {
                 return DeclarationStatement(line, name, value, const)
             }
             Identifier -> {
-                if (peekNext(ColonEqual)) {
+                return if (peekNext(ColonEqual)) {
                     val token = eat(Identifier)
                     val name = token.lexeme
                     val line = token.line
                     eat(ColonEqual)
                     val value = expression()
-                    return DeclarationStatement(line, name, value, false)
+                    DeclarationStatement(line, name, value, false)
                 } else
-                    return ExpressionStatement(tokens[current].line, expression())
+                    ExpressionStatement(tokens[current].line, expression())
             }
             Spawn -> {
                 val line = eat(Spawn).line
@@ -221,10 +221,32 @@ class Parser(val tokens: List<Token>) {
                 return ImportStatement(line, path)
             }
             LeftBrace -> return body()
+            Type -> { userType(); return EmptyStatement(tokens[current].line) }
             else -> return ExpressionStatement(tokens[current].line, expression())
         }
     }
 
+    private fun userType(): Constraint {
+        eat(Type)
+        val name = eat(Identifier).lexeme
+        val constraints = mutableMapOf<String, Constraint>()
+        eat(LeftBrace)
+        while (!peek(RightBrace)) {
+            val property = eat(Identifier).lexeme
+            if (peek(Colon)) {
+                eat(Colon)
+                constraints[property] = constraint()
+            } else {
+                constraints[property] = AnyConstraint
+            }
+            if (!peek(RightBrace)) {
+                eat(Comma)
+            }
+        }
+        eat(RightBrace)
+        Constraints[name] = UserConstraint(constraints)
+        return Constraints[name]!!
+    }
     private fun constraint(): Constraint {
         var constraint = when (peek()) {
             NumType -> {
@@ -297,6 +319,10 @@ class Parser(val tokens: List<Token>) {
             Nil -> {
                 eat(Nil)
                 NilConstraint
+            }
+            Not, Bang -> {
+                eat(peek())
+                NotConstraint(constraint())
             }
             else -> {
                 if (peek(Identifier)) {
@@ -473,7 +499,7 @@ class Parser(val tokens: List<Token>) {
             Object -> {
                 eat(Object); objectExpr()
             }
-            Nil -> NilLiteral(tokens[current].line)
+            Nil -> NilLiteral(eat().line)
             True -> BoolLiteral(eat(True).line, true)
             False -> BoolLiteral(eat(False).line, false)
             Import -> {
@@ -560,10 +586,7 @@ class Parser(val tokens: List<Token>) {
 
     private fun termPrefix(): Expression {
         return when (peek()) {
-            Minus -> UnaryOp(eat(), termPrefix())
-            Not, Bang -> UnaryOp(eat(), termPrefix())
-            New -> UnaryOp(eat(), termPrefix())
-            Recv -> UnaryOp(eat(), termPrefix())
+            Minus, Not, Bang, New, Recv -> UnaryOp(eat(), termPrefix())
             else -> atom()
         }
     }
@@ -585,7 +608,7 @@ class Parser(val tokens: List<Token>) {
         )
     }
 
-    fun expression(): Expression {
+    private fun expression(): Expression {
         val items = mutableListOf<Either<Token, Expression>>(R(term()))
         while (seeBinop()) {
             items.add(L(eat()))

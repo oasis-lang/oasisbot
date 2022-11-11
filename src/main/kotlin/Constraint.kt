@@ -3,9 +3,12 @@ interface Constraint {
     fun isEqual(other: Constraint): Boolean
 }
 
+// yes this is a hack, but necessary to decouple the type system
+val Constraints = mutableMapOf<String, Constraint>()
+
 object NumericConstraint : Constraint {
     override fun fits(item: Any?): Boolean =
-        item is Double
+        item is Number
                 || item is NumberLiteral // AST type checking
 
     override fun isEqual(other: Constraint): Boolean =
@@ -69,7 +72,7 @@ object AnyConstraint : Constraint {
 
 object ObjectConstraint : Constraint {
     override fun fits(item: Any?): Boolean =
-        item is Map<*, *>
+        item is Prototype
                 || item is ObjectLiteral // AST type checking
 
     override fun isEqual(other: Constraint): Boolean =
@@ -140,7 +143,7 @@ class FunctionConstraint(val args: List<Constraint>, val returnType: Constraint)
 
 class NamedConstraint(val name: String) : Constraint {
     override fun fits(item: Any?): Boolean =
-        false
+        Constraints[name]?.fits(item) ?: false
 
     override fun isEqual(other: Constraint): Boolean =
         other is NamedConstraint && name == other.name
@@ -171,5 +174,29 @@ class AndConstraint(val left: Constraint, val right: Constraint) : Constraint {
 
     override fun toString(): String {
         return "$left & $right"
+    }
+}
+
+class NotConstraint(val constraint: Constraint) : Constraint {
+    override fun fits(item: Any?): Boolean =
+        !constraint.fits(item)
+
+    override fun isEqual(other: Constraint): Boolean =
+        other is NotConstraint && constraint.isEqual(other.constraint)
+
+    override fun toString(): String {
+        return "!$constraint"
+    }
+}
+
+class UserConstraint(val fields: Map<String, Constraint>) : Constraint {
+    override fun fits(item: Any?): Boolean =
+        item is Prototype && item.body.all { fields[it.key]?.fits(it.value) ?: false }
+
+    override fun isEqual(other: Constraint): Boolean =
+        other is UserConstraint && other.fields.all { fields[it.key]?.isEqual(it.value) ?: false }
+
+    override fun toString(): String {
+        return "type { ${fields.map { "${it.key}: ${it.value}" }.joinToString(", ")} }"
     }
 }

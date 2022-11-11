@@ -38,6 +38,8 @@ abstract class Statement(open val line: Int) {
         fun visitReturnStatement(node: ReturnStatement): T
         fun visitExpressionStmt(node: ExpressionStatement): T
         fun visitStatementList(node: StatementList): T
+
+        fun visitEmptyStatement(node: EmptyStatement): T
     }
 
     abstract fun <T> accept(visitor: Visitor<T>): T
@@ -385,5 +387,15 @@ class StatementList(override val line: Int, val stmts: List<Statement>) : Statem
 
     override fun toString(): String {
         return stmts.joinToString(" ")
+    }
+}
+
+class EmptyStatement(override val line: Int) : Statement(line) {
+    override fun <T> accept(visitor: Visitor<T>): T {
+        return visitor.visitEmptyStatement(this)
+    }
+
+    override fun toString(): String {
+        return ""
     }
 }

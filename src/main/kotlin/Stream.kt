@@ -1,4 +1,4 @@
-class Stream {
+class Stream : Iterable<Any?> {
     val queue = ArrayDeque<Any?>()
 
     fun send(item: Any?) {
@@ -14,5 +14,17 @@ class Stream {
             // wait for the item to be sent
         }
         return queue.removeFirst()
+    }
+
+    override fun iterator(): Iterator<Any?> {
+        return object : Iterator<Any?> {
+            override fun hasNext(): Boolean {
+                return true
+            }
+
+            override fun next(): Any? {
+                return receive()
+            }
+        }
     }
 }

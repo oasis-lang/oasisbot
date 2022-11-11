@@ -1,5 +1,8 @@
 var hadError = false
 
+var interpreter: Interpreter = Interpreter()
+var code = mutableListOf<String>()
+
 fun main(args: Array<String>) {
     runPrompt()
 }
@@ -14,13 +17,7 @@ fun report(line: Int, where: String, message: String) {
 }
 
 fun handleError(interpreter: Interpreter, oasisError: OasisError) {
-    try {
-        throw HighestException(interpreter, oasisError)
-    } catch (e: HighestException) {
-        hadError = true
-        println(e.localizedMessage)
-        e.printStackTrace()
-    }
+    throw HighestException(interpreter, oasisError)
 }
 
 fun run(line: String, interpreter: Interpreter) {
@@ -43,7 +40,7 @@ fun run(line: String, interpreter: Interpreter) {
     try {
         if (expr is ExpressionStatement) {
             val result = interpreter.eval(expr.expr)
-            if (result != null) {
+            if (result != null && result != Unit) {
                 println(result)
             }
         } else {
@@ -55,7 +52,6 @@ fun run(line: String, interpreter: Interpreter) {
 }
 
 fun runPrompt() {
-    val interpreter = Interpreter()
     while (true) {
         print(">> ")
         val line = readLine() ?: break
