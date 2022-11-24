@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class Module(val name: String) {
     val exports = mutableMapOf<String, Any?>()
 

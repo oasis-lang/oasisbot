@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 interface Constraint {
     fun fits(item: Any?): Boolean
     fun isEqual(other: Constraint): Boolean

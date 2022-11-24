@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class Stream : Iterable<Any?> {
     val queue = ArrayDeque<Any?>()
 

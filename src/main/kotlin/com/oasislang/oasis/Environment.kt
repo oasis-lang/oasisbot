@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class Environment(val enclosing: Environment? = null) {
     private val variables = mutableMapOf<String, Any?>()
     private val constants = mutableListOf<String>()

@@ -1,3 +1,7 @@
+package com.oasislang.oasis
+
+import com.oasislang.oasis.StandardLibrary.Io
+import com.oasislang.oasis.StandardLibrary.Math
 import java.util.*
 import kotlin.concurrent.thread
 import kotlin.math.pow
@@ -12,7 +16,7 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
     var environment = Environment()
     val callStack = Stack<CallFrame>()
 
-    var handlingScope = false
+    private var handlingScope = false
 
     fun loadModule(module: Module) {
         environment.define(module.name, module)
@@ -23,14 +27,12 @@ class Interpreter : Expression.Visitor<Any?>, Statement.Visitor<Boolean> {
         resetCallStack()
 
         // Load the standard library.
-        loadModule(StandardLibrary.Io.toModule())
-        loadModule(StandardLibrary.Math.toModule())
+        loadModule(Io.toModule())
+        loadModule(Math.toModule())
     }
 
     fun resetState() {
-        while (environment.enclosing != null) {
-            environment = environment.enclosing!!
-        }
+        environment = Environment()
         resetCallStack()
     }
 

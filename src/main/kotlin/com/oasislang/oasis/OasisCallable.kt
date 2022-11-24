@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 abstract class OasisCallable {
     abstract fun arity(): Int
     abstract fun name(): String

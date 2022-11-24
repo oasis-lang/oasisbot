@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class OasisFunction(
     val name: String,
     val parameters: List<Pair<String, Constraint>>,

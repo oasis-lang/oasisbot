@@ -1,10 +1,10 @@
-package StandardLibrary
+package com.oasislang.oasis.StandardLibrary
 
-import NativeFunc
-import RuntimeError
-import Module
-import NativeModule
-import Prototype
+import com.oasislang.oasis.NativeFunc
+import com.oasislang.oasis.RuntimeError
+import com.oasislang.oasis.Module
+import com.oasislang.oasis.NativeModule
+import com.oasislang.oasis.Prototype
 import java.io.File
 import java.nio.charset.Charset
 

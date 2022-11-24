@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class NativeFunc<T>(val name: String, val args: Int, val fnc: (Interpreter, List<Any?>) -> T) : OasisCallable() {
     override fun arity(): Int {
         return args

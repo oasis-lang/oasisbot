@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 enum class SpecialType {
     BREAK,
     CONTINUE,

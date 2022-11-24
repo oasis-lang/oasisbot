@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 enum class TokenType {
     LeftParen, RightParen, LeftBrace, RightBrace,
     Comma, Colon, Minus, Plus, Slash, Star,

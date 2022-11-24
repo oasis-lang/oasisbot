@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class Scanner(private val source: String) {
     private var start = 0
     var current = 0

@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class Tuple(vararg val elements: Any?) : Iterable<Any?> {
     override fun iterator(): Iterator<Any?> {
         return elements.iterator()

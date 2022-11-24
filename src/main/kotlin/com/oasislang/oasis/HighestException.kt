@@ -1,6 +1,8 @@
+package com.oasislang.oasis
+
 class HighestException(val interpreter: Interpreter, val error: OasisError) : Throwable() {
     override fun getLocalizedMessage(): String {
-        return error.message ?: "Unknown error"
+        return error.message ?: "Unknown com.oasislang.oasis.error"
     }
 
     override fun toString(): String {

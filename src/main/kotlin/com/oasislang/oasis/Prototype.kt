@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 class Prototype(val parent: Prototype?, val body: MutableMap<String, Any?>) : Iterable<Any?> {
     fun get(name: String): Any? {
         return body[name] ?: parent?.get(name)

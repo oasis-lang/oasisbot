@@ -1,3 +1,5 @@
+package com.oasislang.oasis
+
 abstract class Expression(open val line: Int) {
     interface Visitor<T> {
         fun visitNumberLiteral(node: NumberLiteral): T

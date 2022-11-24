@@ -1,9 +1,11 @@
-package StandardLibrary
+package com.oasislang.oasis.StandardLibrary
 
-import Module
-import NativeFunc
-import NativeModule
+import com.oasislang.oasis.Module
+import com.oasislang.oasis.NativeFunc
+import com.oasislang.oasis.NativeModule
+import java.lang.Math
 import kotlin.math.*
+import kotlin.random.Random
 
 object Math : NativeModule {
     private var sin = NativeFunc("sin", 1) { _, args ->
@@ -91,7 +93,7 @@ object Math : NativeModule {
     }
 
     private var cbrt = NativeFunc("cbrt", 1) { _, args ->
-        java.lang.Math.cbrt(args[0] as Double)
+        Math.cbrt(args[0] as Double)
     }
 
     private var hypot = NativeFunc("hypot", 2) { _, args ->
@@ -131,27 +133,27 @@ object Math : NativeModule {
     }
 
     private var random = NativeFunc("random", 0) { _, _ ->
-        kotlin.random.Random.nextDouble()
+        Random.nextDouble()
     }
 
     private var randomInt = NativeFunc("randomInt", 1) { _, args ->
-        kotlin.random.Random.nextInt((args[0] as Double).toInt()).toDouble()
+        Random.nextInt((args[0] as Double).toInt()).toDouble()
     }
 
     private var randomIntRange = NativeFunc("randomIntRange", 2) { _, args ->
-        kotlin.random.Random.nextInt((args[0] as Double).toInt(), (args[1] as Double).toInt()).toDouble()
+        Random.nextInt((args[0] as Double).toInt(), (args[1] as Double).toInt()).toDouble()
     }
 
     private var randomRange = NativeFunc("randomRange", 2) { _, args ->
-        kotlin.random.Random.nextDouble((args[0] as Double), (args[1] as Double))
+        Random.nextDouble((args[0] as Double), (args[1] as Double))
     }
 
     private var toDegrees = NativeFunc("toDegrees", 1) { _, args ->
-        java.lang.Math.toDegrees(args[0] as Double)
+        Math.toDegrees(args[0] as Double)
     }
 
     private var toRadians = NativeFunc("toRadians", 1) { _, args ->
-        java.lang.Math.toRadians(args[0] as Double)
+        Math.toRadians(args[0] as Double)
     }
 
     private var nextDown = NativeFunc("nextDown", 1) { _, args ->

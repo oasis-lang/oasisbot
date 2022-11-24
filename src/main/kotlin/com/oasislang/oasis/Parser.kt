@@ -1,5 +1,7 @@
-import TokenType.*
-import TokenType.Number
+package com.oasislang.oasis
+
+import com.oasislang.oasis.TokenType.*
+import com.oasislang.oasis.TokenType.Number
 
 sealed class Either<out A, out B>
 class L<A>(val value: A) : Either<A, Nothing>()
@@ -44,6 +46,14 @@ class Parser(private val tokens: List<Token>) {
 
     private fun eat(): Token {
         return tokens[current++]
+    }
+
+    fun parse(): StatementList {
+        val statements = mutableListOf<Statement>()
+        while (!isAtEnd()) {
+            statements.add(statement())
+        }
+        return StatementList(0, statements)
     }
 
     private fun body(): Statement {
